@@ -123,8 +123,7 @@ class FadeColor(ImageFilter):
 
 
 class Film(ImageFilter):
-    # инфрокрасное
-
+    
     def __init__(self, intensity=1.0, **kwargs):
 
         self.intensity = max(0.0, min(1.0, intensity))
@@ -159,43 +158,45 @@ class Film(ImageFilter):
 
 
 
-
 class Matte(ImageFilter):
-
     def __init__(self, intensity=1.0, border=0.15, **kwargs):
         self.border = max(0.0, min(0.5, border))
         self.intensity = max(0.0, min(1.0, intensity))
 
     def apply_filter(self, image):
-        if self.intensity == 0:
-            return image.copy()
 
         h, w = image.shape[:2]
         Y, X = np.ogrid[:h, :w]
 
+        # Координаты центра изображения
         cx = (w - 1) / 2.0
         cy = (h - 1) / 2.0
 
+        # Полуоси эллипса
         rx = max(cx * (1.0 - self.border), 1.0)
         ry = max(cy * (1.0 - self.border), 1.0)
 
-        # Нормированное расстояние: 0 в центре, 1 — на границе овала.
+        # Нормализованное расстояние до центра
         dist = np.sqrt(
             ((X - cx) / rx) ** 2 +
             ((Y - cy) / ry) ** 2
         )
 
-        mask = np.clip((dist - 0.85) / 0.15, 0.0, 1.0)
+        softness = 0.30 * self.intensity
 
-        # smoothstep — сглаживает кривую перехода.
-        mask = mask * mask * (3.0 - 2.0 * mask)
+        if softness == 0:
+            mask = (dist >= 1.0).astype(np.float32)
+        else:
+            mask = np.clip((dist - (1.0 - softness)) / softness, 0.0, 1.0)
+            mask = mask * mask * (3.0 - 2.0 * mask)
 
-        # Всё, что ЗА границей овала — принудительно белое.
-        mask = np.where(dist >= 1.0, 1.0, mask).astype(np.float32)
+    
+        mask = mask.astype(np.float32)
 
         img = image.astype(np.float32)
-        alpha = (mask * self.intensity)[:, :, None]
+        alpha = mask[:, :, None]
 
+        # Смешивание изображения с белым цветом
         result = img * (1.0 - alpha) + 255.0 * alpha
 
         return np.clip(result, 0, 255).astype(np.uint8)
